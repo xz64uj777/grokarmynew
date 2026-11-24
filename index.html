@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover, maximum-scale=1, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#1c2414" />
+    <title>Corps Command: Heavy Duty</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <canvas id="view"></canvas>
+    <div id="ui">
+      <section id="menu" class="screen">
+        <p class="eyebrow">U.S. Army Corps of Engineers</p>
+        <h1>Corps Command</h1>
+        <h2>Heavy Duty</h2>
+        <p class="lede">Two thumbs. Heavy iron. Hold the line.</p>
+        <div class="menu-actions">
+          <button type="button" data-go="levee">Levee Breach</button>
+          <button type="button" data-go="airfield">Forward Airfield</button>
+          <button type="button" class="ghost" data-go="garage">Garage</button>
+        </div>
+      </section>
+
+      <section id="hud" class="hud" hidden>
+        <header class="hud-top">
+          <button type="button" id="btn-menu" class="hud-btn small">Menu</button>
+          <div class="hud-copy">
+            <p id="hud-title">Mission</p>
+            <p id="hud-objective"></p>
+          </div>
+        </header>
+        <div id="hud-meters" class="meters"></div>
+        <div class="stick left" id="stick-left" aria-label="Drive"><i></i></div>
+        <div class="stick right" id="stick-right" aria-label="Rig"><i></i></div>
+        <div class="hud-right">
+          <button type="button" id="btn-switch" class="hud-btn">Dozer</button>
+          <div id="stick-adjust" class="adjust" hidden>
+            <button type="button" id="btn-stick-in" class="hud-btn small">Stick In</button>
+            <button type="button" id="btn-stick-out" class="hud-btn small">Stick Out</button>
+          </div>
+          <button type="button" id="btn-action" class="hud-btn action">Hook</button>
+        </div>
+        <p id="hud-hint" class="hint"></p>
+      </section>
+
+      <section id="garage-ui" class="screen garage-ui" hidden>
+        <p class="eyebrow">Motor pool</p>
+        <h1 id="garage-name">Garage</h1>
+        <p id="garage-blurb" class="lede"></p>
+        <div class="menu-actions row">
+          <button type="button" id="btn-prev" class="ghost">Prev</button>
+          <button type="button" id="btn-next" class="ghost">Next</button>
+          <button type="button" id="btn-garage-back">Mission Select</button>
+        </div>
+      </section>
+
+      <section id="end" class="screen" hidden>
+        <p class="eyebrow" id="end-kicker">Mission report</p>
+        <h1 id="end-title">Held the line</h1>
+        <p id="end-stars" class="stars"></p>
+        <p id="end-body" class="lede"></p>
+        <div class="menu-actions">
+          <button type="button" id="btn-replay">Replay</button>
+          <button type="button" id="btn-other" class="ghost">Other Mission</button>
+          <button type="button" id="btn-end-menu" class="ghost">Mission Select</button>
+        </div>
+      </section>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
