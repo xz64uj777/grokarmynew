@@ -20,6 +20,8 @@ const hudMeters = must("#hud-meters");
 const btnAction = must("#btn-action");
 const btnSwitch = must("#btn-switch");
 const stickAdjust = must("#stick-adjust");
+const labelRight = must("#label-right");
+const craneAxes = must("#crane-axes");
 const garageName = must("#garage-name");
 const garageBlurb = must("#garage-blurb");
 const endKicker = must("#end-kicker");
@@ -51,6 +53,7 @@ must("#btn-garage-back").addEventListener("click", () => game.showMenu());
 must("#btn-replay").addEventListener("click", () => game.replay());
 must("#btn-other").addEventListener("click", () => game.otherMission());
 must("#btn-end-menu").addEventListener("click", () => game.showMenu());
+hudHint.addEventListener("click", () => game.dismissHint());
 
 game.onChange = syncUi;
 syncUi();
@@ -76,13 +79,24 @@ function syncUi(): void {
   }
 
   if (mode === "levee" || mode === "airfield") {
-    const state = game.hud;
-    hudTitle.textContent = state.title;
-    hudObjective.textContent = state.objective;
-    hudHint.textContent = state.hint;
-    btnAction.textContent = state.action;
-    btnSwitch.textContent = state.swap;
-    stickAdjust.hidden = !state.showStick;
+    applyHud(true);
+  }
+}
+
+function applyHud(rebuildMeters: boolean): void {
+  const state = game.hud;
+  hudTitle.textContent = state.title;
+  hudObjective.textContent = state.objective;
+  hudHint.textContent = state.hint;
+  hudHint.hidden = !state.hint;
+  btnAction.textContent = state.action;
+  btnAction.hidden = !state.showAction;
+  btnSwitch.textContent = state.swap;
+  stickAdjust.hidden = true;
+  const crane = state.rightStick === "crane";
+  craneAxes.hidden = !crane;
+  labelRight.hidden = crane;
+  if (rebuildMeters) {
     hudMeters.replaceChildren();
     for (const meter of state.meters) {
       const wrap = document.createElement("div");
@@ -116,15 +130,9 @@ function frame(): void {
   input.update();
   game.step(input);
   if (!hud.hidden) {
-    const state = game.hud;
-    hudTitle.textContent = state.title;
-    hudObjective.textContent = state.objective;
-    hudHint.textContent = state.hint;
-    btnAction.textContent = state.action;
-    btnSwitch.textContent = state.swap;
-    stickAdjust.hidden = !state.showStick;
+    applyHud(false);
     const bars = hudMeters.querySelectorAll("b");
-    state.meters.forEach((meter, i) => {
+    game.hud.meters.forEach((meter, i) => {
       const bar = bars[i];
       if (!(bar instanceof HTMLElement)) return;
       bar.style.width = `${Math.round(THREE_CLAMP(meter.value) * 100)}%`;

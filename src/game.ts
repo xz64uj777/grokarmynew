@@ -22,7 +22,8 @@ export type HudState = {
   hint: string;
   action: string;
   swap: string;
-  showStick: boolean;
+  showAction: boolean;
+  rightStick: "blade" | "crane";
   meters: { label: string; value: number; tone?: "good" | "warn" | "bad" }[];
 };
 
@@ -112,10 +113,10 @@ function makeBarrier(): THREE.Mesh {
 }
 
 function makeRock(rng: () => number): THREE.Mesh {
-  const s = 0.7 + rng() * 0.7;
+  const s = 1.05 + rng() * 0.85;
   const mesh = new THREE.Mesh(
     new THREE.BoxGeometry(s, s * 0.8, s * 0.9),
-    mat(0x6d6558),
+    mat(rng() > 0.5 ? 0xe0cc8a : 0xc4a45c),
   );
   mesh.scale.set(1, 0.85 + rng() * 0.3, 1);
   mesh.rotation.y = rng() * Math.PI;
@@ -165,7 +166,8 @@ export class Game {
     hint: "",
     action: "Action",
     swap: "Dozer",
-    showStick: false,
+    showAction: false,
+    rightStick: "blade",
     meters: [],
   };
   end: EndReport | null = null;
@@ -174,7 +176,6 @@ export class Game {
   private clock = new THREE.Clock();
   private camTarget = new THREE.Vector3();
   private camPos = new THREE.Vector3(18, 14, 22);
-  private hintAge = 0;
 
   private dozer: HeavyDozer | null = null;
   private crane: TrackedExcavator | null = null;
@@ -241,8 +242,6 @@ export class Game {
     } else if (this.mode === "end" || this.end) {
       this.updateEndCam(dt);
     }
-    this.hintAge += dt;
-    if (this.hintAge > 7) this.hud.hint = "";
     this.renderer.render(this.scene, this.camera);
   }
 
@@ -283,7 +282,6 @@ export class Game {
     this.usedDozer = false;
     this.usedCrane = false;
     this.rig = "dozer";
-    this.hintAge = 0;
     this.rocks = [];
     this.barriers = [];
 
@@ -329,17 +327,29 @@ export class Game {
 
     const rng = mulberry(19);
     const piles = [
-      { x: 9, z: -11 },
-      { x: 10, z: 11 },
-      { x: 8, z: 0.5 },
+      { x: 8, z: -5 },
+      { x: 7.5, z: 0 },
+      { x: 8, z: 5 },
     ];
     for (const pile of piles) {
-      for (let i = 0; i < 7; i++) {
+      const marker = new THREE.Mesh(
+        new THREE.CircleGeometry(3.4, 16),
+        new THREE.MeshBasicMaterial({
+          color: 0xf0c400,
+          transparent: true,
+          opacity: 0.38,
+          depthWrite: false,
+        }),
+      );
+      marker.rotation.x = -Math.PI / 2;
+      marker.position.set(pile.x, 0.05, pile.z);
+      this.scene.add(marker);
+      for (let i = 0; i < 6; i++) {
         const rock = makeRock(rng);
         rock.position.set(
-          pile.x + (rng() - 0.5) * 3.2,
-          0.4,
-          pile.z + (rng() - 0.5) * 3.2,
+          pile.x + (rng() - 0.5) * 2.8,
+          0.55,
+          pile.z + (rng() - 0.5) * 2.8,
         );
         this.scene.add(rock);
         this.rocks.push(rock);
@@ -376,7 +386,7 @@ export class Game {
     this.camTarget.set(11, 2, -18);
     this.camPos.set(20, 12, -8);
     this.camera.position.copy(this.camPos);
-    this.setLeveeHud("Push rock into the gap with the dozer. Switch to the crane to drop barriers.");
+    this.setLeveeHud("Push the pale rock piles into the gap. Switch to the crane when you are ready to drop barriers.");
     this.emit();
   }
 
@@ -388,7 +398,6 @@ export class Game {
     this.lightsBuilt = false;
     this.planeTime = 0;
     this.rig = "dozer";
-    this.hintAge = 0;
     this.bumps = [];
     this.panels = [];
     this.pallet = [];
@@ -523,6 +532,11 @@ export class Game {
     return info[this.garageIndex];
   }
 
+  dismissHint(): void {
+    this.hud.hint = "";
+    this.emit();
+  }
+
   replay(): void {
     if (this.end?.mission === "airfield") this.startAirfield();
     else this.startLevee();
@@ -592,6 +606,12 @@ export class Game {
   private updateMission(input: Input, dt: number): void {
     if (input.switchPressed) {
       this.rig = this.rig === "dozer" ? "crane" : "dozer";
+      this.hud.hint =
+        this.rig === "crane"
+          ? this.mode === "levee"
+            ? "Swing and raise the Boom until the hook is over a barrier, then tap Hook."
+            : "Swing and raise the Boom until the hook is over a matting panel, then tap Hook."
+          : "";
     }
     const active = this.rig === "dozer" ? this.dozer : this.crane;
     if (!active) return;
@@ -627,12 +647,18 @@ export class Game {
 
   private followCam(target: THREE.Object3D, dt: number): void {
     target.getWorldPosition(this.camTarget);
-    this.camTarget.y += 1.6;
     _forward.set(0, 0, -1).applyAxisAngle(UP, target.rotation.y);
-    const desired = this.camTarget
-      .clone()
-      .addScaledVector(_forward, -12)
-      .add(new THREE.Vector3(0, 7.5, 0));
+    const desired = this.camTarget.clone();
+    if (this.rig === "crane" && this.crane) {
+      const hook = this.crane.attachmentMount.getObjectByName("hook") ?? this.crane.attachmentMount;
+      hook.getWorldPosition(_world);
+      this.camTarget.lerp(_world, 0.7);
+      this.camTarget.y += 0.6;
+      desired.addScaledVector(_forward, -14).add(new THREE.Vector3(0, 10, 0));
+    } else {
+      this.camTarget.y += 1.6;
+      desired.copy(this.camTarget).addScaledVector(_forward, -12).add(new THREE.Vector3(0, 7.5, 0));
+    }
     this.camPos.lerp(desired, 1 - Math.exp(-3.2 * dt));
     this.camera.position.copy(this.camPos);
     this.camera.lookAt(this.camTarget);
@@ -640,7 +666,7 @@ export class Game {
 
   private updateLevee(input: Input, dt: number): void {
     if (!this.dozer || !this.water) return;
-    this.waterLevel += dt * 0.024;
+    this.waterLevel += dt * 0.018;
     this.water.position.y = this.waterLevel;
     if (this.flood) {
       this.water.position.x = THREE.MathUtils.lerp(this.water.position.x, 10, 1 - Math.exp(-0.6 * dt));
@@ -650,30 +676,31 @@ export class Game {
     this.dozer.blade.getWorldPosition(_world);
     _forward.set(0, 0, 1).applyAxisAngle(UP, this.dozer.rotation.y);
     const moving = Math.hypot(input.left.x, input.left.y);
-    if (this.rig === "dozer" && moving > 0.12) {
+    if (this.rig === "dozer" && moving > 0.08 && input.left.y > 0.04) {
       for (const rock of this.rocks) {
         const dx = rock.position.x - _world.x;
         const dz = rock.position.z - _world.z;
-        if (Math.hypot(dx, dz) < 2.3 && dx * _forward.x + dz * _forward.z > 0) {
-          rock.position.addScaledVector(_forward, 8.5 * dt * input.left.y);
-          rock.position.y = 0.4;
+        if (Math.hypot(dx, dz) < 3.2 && dx * _forward.x + dz * _forward.z > -0.35) {
+          const speed = 10 * dt * Math.max(input.left.y, 0.4);
+          rock.position.addScaledVector(_forward, speed);
+          rock.position.y = 0.55;
         }
       }
     }
 
-    if (this.crane) this.handleHook(input, this.barriers, 2.6);
+    if (this.crane) this.handleHook(input, this.barriers, 7);
 
     let fill = 0;
     for (const rock of this.rocks) {
-      if (rock.position.x < 3.2 && rock.position.x > -4 && Math.abs(rock.position.z) < 9) {
-        fill += 0.07;
-        rock.position.y = 0.45;
+      if (rock.position.x < 4 && rock.position.x > -4.5 && Math.abs(rock.position.z) < 8.5) {
+        fill += 0.05;
+        rock.position.y = 0.5;
       }
     }
     for (const barrier of this.barriers) {
       if (barrier.parent !== this.scene) continue;
-      if (barrier.position.x < 3.2 && barrier.position.x > -4 && Math.abs(barrier.position.z) < 9) {
-        fill += 0.16;
+      if (barrier.position.x < 4 && barrier.position.x > -4.5 && Math.abs(barrier.position.z) < 8.5) {
+        fill += 0.17;
         barrier.userData.inGap = true;
       }
     }
@@ -697,7 +724,8 @@ export class Game {
         hint: this.hud.hint,
         action: this.held ? "Drop" : "Hook",
         swap: this.rig === "dozer" ? "Crane" : "Dozer",
-        showStick: this.rig === "crane",
+        showAction: this.rig === "crane",
+        rightStick: this.rig === "crane" ? "crane" : "blade",
         meters: [
           { label: "River", value: this.waterLevel / crest, tone: waterTone },
           { label: "Plug", value: Math.min(1, this.fill), tone: this.fill >= 1 ? "good" : undefined },
@@ -721,7 +749,7 @@ export class Game {
     for (const bump of this.bumps) left += bump.scale.y;
     const grade = this.grade0 > 0 ? 1 - left / this.grade0 : 1;
 
-    if (this.crane) this.handleHook(input, this.pallet, 3.2);
+    if (this.crane) this.handleHook(input, this.pallet, 7);
 
     if (this.held && input.actionPressed && this.rig === "crane") {
       const slot = this.panels.find((p) => !p.mesh);
@@ -781,7 +809,8 @@ export class Game {
         hint: this.hud.hint,
         action: this.held ? "Drop" : placed >= 6 && !this.lightsBuilt ? "Lights" : "Hook",
         swap: this.rig === "dozer" ? "Crane" : "Dozer",
-        showStick: this.rig === "crane",
+        showAction: this.rig === "crane" || (placed >= 6 && !this.lightsBuilt),
+        rightStick: this.rig === "crane" ? "crane" : "blade",
         meters: [
           { label: "Grade", value: grade, tone: grade >= 0.75 ? "good" : undefined },
           { label: "Matting", value: placed / 6, tone: placed >= 6 ? "good" : undefined },
@@ -795,9 +824,15 @@ export class Game {
     }
   }
 
+  private hookWorldPosition(out: THREE.Vector3): void {
+    if (!this.crane) return;
+    const hook = this.crane.attachmentMount.getObjectByName("hook") ?? this.crane.attachmentMount;
+    hook.getWorldPosition(out);
+  }
+
   private handleHook(input: Input, items: THREE.Mesh[], reach: number): void {
     if (!this.crane || this.rig !== "crane") return;
-    this.crane.attachmentMount.getWorldPosition(_world);
+    this.hookWorldPosition(_world);
     if (this.held) {
       if (input.actionPressed && this.mode === "levee") {
         this.scene.attach(this.held);
@@ -813,8 +848,11 @@ export class Game {
       if (item.userData.inGap) continue;
       if (this.mode === "airfield" && this.panels.some((p) => p.mesh === item)) continue;
       item.getWorldPosition(_forward);
-      const d = _world.distanceTo(_forward);
-      if (d < bestDist) {
+      const dx = _world.x - _forward.x;
+      const dz = _world.z - _forward.z;
+      const d = Math.hypot(dx, dz);
+      const dy = Math.abs(_world.y - _forward.y);
+      if (d < bestDist && dy < 10) {
         best = item;
         bestDist = d;
       }
@@ -894,7 +932,8 @@ export class Game {
       hint,
       action: "Hook",
       swap: "Crane",
-      showStick: false,
+      showAction: false,
+      rightStick: "blade",
       meters: [
         { label: "River", value: 0.33 },
         { label: "Plug", value: 0 },
@@ -909,7 +948,8 @@ export class Game {
       hint,
       action: "Hook",
       swap: "Crane",
-      showStick: false,
+      showAction: false,
+      rightStick: "blade",
       meters: [
         { label: "Grade", value: 0 },
         { label: "Matting", value: 0 },

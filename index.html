@@ -34,9 +34,22 @@
             <p id="hud-objective"></p>
           </div>
         </header>
-        <div id="hud-meters" class="meters"></div>
-        <div class="stick left" id="stick-left" aria-label="Drive"><i></i></div>
-        <div class="stick right" id="stick-right" aria-label="Rig"><i></i></div>
+        <div class="hud-left">
+          <button type="button" id="hud-hint" class="hint" hidden></button>
+          <div id="hud-meters" class="meters"></div>
+        </div>
+        <div class="stick left" id="stick-left" aria-label="Drive">
+          <span class="stick-label">Drive</span>
+          <i></i>
+        </div>
+        <div class="stick right" id="stick-right" aria-label="Blade">
+          <span class="stick-label" id="label-right">Blade</span>
+          <span class="crane-axes" id="crane-axes" hidden>
+            <span class="axis top">Boom</span>
+            <span class="axis mid">Swing</span>
+          </span>
+          <i></i>
+        </div>
         <div class="hud-right">
           <button type="button" id="btn-switch" class="hud-btn">Dozer</button>
           <div id="stick-adjust" class="adjust" hidden>
@@ -45,7 +58,6 @@
           </div>
           <button type="button" id="btn-action" class="hud-btn action">Hook</button>
         </div>
-        <p id="hud-hint" class="hint"></p>
       </section>
 
       <section id="garage-ui" class="screen garage-ui" hidden>
