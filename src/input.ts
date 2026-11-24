@@ -21,6 +21,8 @@ export class Input {
   private actionButtonDown = false;
   private stickInButton = false;
   private stickOutButton = false;
+  private queuedAction = false;
+  private queuedSwitch = false;
 
   bind(leftEl: HTMLElement, rightEl: HTMLElement): void {
     const bindStick = (el: HTMLElement, side: "left" | "right") => {
@@ -52,8 +54,8 @@ export class Input {
       if (this.keys.has(key)) return;
       this.keys.add(key);
       if (event.key === " " || event.key === "Tab") event.preventDefault();
-      if (key === "v" || event.key === "Tab") this.switchPressed = true;
-      if (event.key === " ") this.actionPressed = true;
+      if (key === "v" || event.key === "Tab") this.queuedSwitch = true;
+      if (event.key === " ") this.queuedAction = true;
     });
     window.addEventListener("keyup", (event) => {
       this.keys.delete(event.key.toLowerCase());
@@ -84,11 +86,11 @@ export class Input {
     hold(opts.action, (pressed) => {
       this.actionButtonDown = pressed;
     }, () => {
-      this.actionPressed = true;
+      this.queuedAction = true;
     });
     opts.swap.addEventListener("pointerdown", (event) => {
       event.preventDefault();
-      this.switchPressed = true;
+      this.queuedSwitch = true;
     });
     hold(opts.stickIn, (pressed) => {
       this.stickInButton = pressed;
@@ -112,6 +114,14 @@ export class Input {
     this.stickIn = this.stickInButton || this.keys.has("q");
     this.stickOut = this.stickOutButton || this.keys.has("e");
     this.actionHeld = this.actionButtonDown || this.keys.has(" ");
+    if (this.queuedAction) {
+      this.actionPressed = true;
+      this.queuedAction = false;
+    }
+    if (this.queuedSwitch) {
+      this.switchPressed = true;
+      this.queuedSwitch = false;
+    }
   }
 
   endFrame(): void {

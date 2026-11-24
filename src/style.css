@@ -292,13 +292,13 @@ button:active { transform: translateY(1px); }
   text-shadow: 0 1px 3px #000;
 }
 
-.stick-label { top: -20px; }
+.stick-label { top: 8px; }
 .stick-label[hidden] { display: none !important; }
 
 .crane-axes { pointer-events: none; }
 .crane-axes[hidden] { display: none !important; }
-.crane-axes .axis.top { top: -20px; }
-.crane-axes .axis.mid { bottom: -20px; }
+.crane-axes .axis.top { top: 8px; }
+.crane-axes .axis.mid { bottom: 8px; }
 
 .stars {
   margin: 4px 0 10px;

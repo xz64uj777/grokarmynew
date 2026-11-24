@@ -422,7 +422,6 @@ export class Game {
     this.rig = "dozer";
     this.lightsBuilt = false;
     this.planeTime = 0;
-    this.rig = "dozer";
     this.bumps = [];
     this.panels = [];
     this.pallet = [];
@@ -758,6 +757,7 @@ export class Game {
     const moving = Math.hypot(input.left.x, input.left.y);
     if (this.rig === "dozer" && moving > 0.08 && input.left.y > 0.04) {
       for (const rock of this.rocks) {
+        if (rock.userData.seated) continue;
         const dx = rock.position.x - _world.x;
         const dz = rock.position.z - _world.z;
         if (Math.hypot(dx, dz) < 3.2 && dx * _forward.x + dz * _forward.z > -0.35) {
@@ -773,15 +773,16 @@ export class Game {
 
     let fill = 0;
     for (const rock of this.rocks) {
-      if (rock.position.x < 4 && rock.position.x > -4.5 && Math.abs(rock.position.z) < 8.5) {
-        fill += 0.05;
-        rock.position.y = 0.5;
+      if (this.inGap(rock.position.x, rock.position.z)) {
+        fill += 0.105;
+        rock.userData.seated = true;
+        rock.position.y = 0.4;
       }
     }
     for (const barrier of this.barriers) {
       if (barrier.parent !== this.scene) continue;
-      if (barrier.position.x < 4 && barrier.position.x > -4.5 && Math.abs(barrier.position.z) < 8.5) {
-        fill += 0.17;
+      if (this.inGap(barrier.position.x, barrier.position.z)) {
+        fill += 0.72;
         barrier.userData.inGap = true;
       }
     }
@@ -881,11 +882,20 @@ export class Game {
     }
   }
 
+  private inGap(x: number, z: number): boolean {
+    return x < 4 && x > -4.5 && Math.abs(z) < 8.5;
+  }
+
   private dropHeld(tipped: boolean): void {
     if (!this.held) return;
     this.scene.attach(this.held);
     this.held.position.y = 0.52;
-    if (tipped) this.held.position.x += 1.6;
+    if (tipped) {
+      this.held.position.x += 1.6;
+    } else if (this.held.position.x < 6 && this.held.position.x > -6 && Math.abs(this.held.position.z) < 16) {
+      // Set on the levee line, it settles into the opening.
+      this.held.position.z = THREE.MathUtils.clamp(this.held.position.z, -7, 7);
+    }
     this.held = null;
   }
 
