@@ -43,6 +43,7 @@ menu.addEventListener("click", (event) => {
   const go = btn.dataset.go;
   if (go === "levee") game.startLevee();
   else if (go === "airfield") game.startAirfield();
+  else if (go === "port") game.startPortBlackout();
   else if (go === "garage") game.showGarage();
 });
 

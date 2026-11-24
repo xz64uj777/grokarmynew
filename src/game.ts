@@ -12,8 +12,9 @@ import {
   type HeavyLiftHelicopter,
   type TrackedExcavator,
 } from "./machines";
+import { PortBlackoutMission } from "./missions/portBlackout";
 
-export type Mode = "menu" | "levee" | "airfield" | "garage" | "end";
+export type Mode = "menu" | "levee" | "airfield" | "garage" | "port" | "end";
 export type Rig = "dozer" | "crane";
 
 export type HudState = {
@@ -32,7 +33,7 @@ export type EndReport = {
   title: string;
   body: string;
   stars: number;
-  mission: "levee" | "airfield";
+  mission: "levee" | "airfield" | "port";
 };
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -207,6 +208,7 @@ export class Game {
 
   private garageRigs: (AmphibiousDredger | HeavyLiftHelicopter | DewateringPump)[] = [];
   private garageIndex = 0;
+  private port: PortBlackoutMission | null = null;
   private garageSpin = 0;
   private menuSpin = 0;
 
@@ -239,6 +241,8 @@ export class Game {
     else if (this.mode === "garage") this.updateGarage(dt);
     else if ((this.mode === "levee" || this.mode === "airfield") && !this.end) {
       this.updateMission(input, dt);
+    } else if (this.mode === "port" && this.port && !this.end) {
+      this.port.update(dt);
     } else if (this.mode === "end" || this.end) {
       this.updateEndCam(dt);
     }
@@ -537,13 +541,30 @@ export class Game {
     this.emit();
   }
 
+  startPortBlackout(): void {
+    this.resetWorld(0x4a5568, 0x3d4a5c, 0x1a1e18);
+    this.mode = "port";
+    this.end = null;
+    this.port = new PortBlackoutMission(this.scene, this.camera);
+    this.port.onMenu = () => this.showMenu();
+    this.port.onEnd = (result) => {
+      if (this.port) this.camTarget.copy(this.port.lookPoint);
+      this.end = { ...result, mission: "port" };
+      this.mode = "end";
+      this.emit();
+    };
+    this.emit();
+  }
+
   replay(): void {
     if (this.end?.mission === "airfield") this.startAirfield();
+    else if (this.end?.mission === "port") this.startPortBlackout();
     else this.startLevee();
   }
 
   otherMission(): void {
-    if (this.end?.mission === "airfield") this.startLevee();
+    if (this.end?.mission === "port") this.startAirfield();
+    else if (this.end?.mission === "airfield") this.startLevee();
     else this.startAirfield();
   }
 
@@ -959,6 +980,8 @@ export class Game {
   }
 
   private resetWorld(fog: number, sky: number, groundHem: number): void {
+    this.port?.dispose();
+    this.port = null;
     this.clearScene();
     this.scene.background = new THREE.Color(sky);
     this.scene.fog = new THREE.Fog(fog, 40, 160);
