@@ -15,7 +15,7 @@ import {
 import { PortBlackoutMission } from "./missions/portBlackout";
 
 export type Mode = "menu" | "levee" | "airfield" | "garage" | "port" | "end";
-export type Rig = "dozer" | "crane";
+export type Rig = "dozer" | "crane" | "pump";
 
 export type HudState = {
   title: string;
@@ -24,7 +24,7 @@ export type HudState = {
   action: string;
   swap: string;
   showAction: boolean;
-  rightStick: "blade" | "crane";
+  rightStick: "blade" | "crane" | "none";
   meters: { label: string; value: number; tone?: "good" | "warn" | "bad" }[];
 };
 
@@ -110,6 +110,7 @@ function makeBarrier(): THREE.Mesh {
   mesh.receiveShadow = true;
   mesh.position.y = 0.52;
   mesh.userData.inGap = false;
+  mesh.userData.tons = 7.4;
   return mesh;
 }
 
@@ -195,7 +196,14 @@ export class Game {
   private held: THREE.Object3D | null = null;
   private usedDozer = false;
   private usedCrane = false;
+  private usedPump = false;
   private flood = false;
+  private pump: DewateringPump | null = null;
+  private pumpRunning = false;
+  private sway = 0;
+  private swingRate = 0;
+  private craneLock = 0;
+  private missionTime = 0;
 
   private bumps: THREE.Mesh[] = [];
   private grade0 = 0;
@@ -285,6 +293,12 @@ export class Game {
     this.held = null;
     this.usedDozer = false;
     this.usedCrane = false;
+    this.usedPump = false;
+    this.pumpRunning = false;
+    this.sway = 0;
+    this.swingRate = 0;
+    this.craneLock = 0;
+    this.missionTime = 0;
     this.rig = "dozer";
     this.rocks = [];
     this.barriers = [];
@@ -387,10 +401,16 @@ export class Game {
     this.crane.setStick(this.stick);
     this.scene.add(this.crane);
 
+    this.pump = createDewateringPump();
+    this.pump.position.set(22, 0, 2);
+    this.pump.rotation.y = -Math.PI / 2;
+    this.pump.setRunning(false);
+    this.scene.add(this.pump);
+
     this.camTarget.set(11, 2, -18);
     this.camPos.set(20, 12, -8);
     this.camera.position.copy(this.camPos);
-    this.setLeveeHud("Push the pale rock piles into the gap. Switch to the crane when you are ready to drop barriers.");
+    this.setLeveeHud("Push the pale rock piles into the gap. The crane sets barriers. The pump, on the dry side, lowers the river.");
     this.emit();
   }
 
@@ -399,6 +419,7 @@ export class Game {
     this.mode = "airfield";
     this.end = null;
     this.held = null;
+    this.rig = "dozer";
     this.lightsBuilt = false;
     this.planeTime = 0;
     this.rig = "dozer";
@@ -625,16 +646,8 @@ export class Game {
   }
 
   private updateMission(input: Input, dt: number): void {
-    if (input.switchPressed) {
-      this.rig = this.rig === "dozer" ? "crane" : "dozer";
-      this.hud.hint =
-        this.rig === "crane"
-          ? this.mode === "levee"
-            ? "Swing and raise the Boom until the hook is over a barrier, then tap Hook."
-            : "Swing and raise the Boom until the hook is over a matting panel, then tap Hook."
-          : "";
-    }
-    const active = this.rig === "dozer" ? this.dozer : this.crane;
+    if (input.switchPressed) this.cycleRig();
+    const active = this.activeRig();
     if (!active) return;
 
     if (this.rig === "dozer" && this.dozer) {
@@ -646,24 +659,66 @@ export class Game {
       this.dozer.setBladePitch(this.pitch);
       this.dozer.setBladeTilt(this.tilt);
       if (input.left.y * input.left.y + input.left.x * input.left.x > 0.05) this.usedDozer = true;
-    } else if (this.crane) {
-      drive(this.crane, input, dt, 6.2, 1.3, 70);
-      this.slew += -input.right.x * dt * 1.3;
-      this.boom += -input.right.y * dt * 1.0;
-      if (input.stickOut) this.stick += dt * 1.2;
-      if (input.stickIn) this.stick -= dt * 1.2;
-      this.boom = THREE.MathUtils.clamp(this.boom, -1.15, 0.3);
-      this.stick = THREE.MathUtils.clamp(this.stick, -0.1, 2.1);
-      this.crane.setSlew(this.slew);
-      this.crane.setBoom(this.boom);
-      this.crane.setStick(this.stick);
-      if (input.left.y * input.left.y + input.left.x * input.left.x > 0.05) this.usedCrane = true;
+    } else if (this.rig === "crane" && this.crane) {
+      if (this.craneLock > 0) {
+        this.craneLock = Math.max(0, this.craneLock - dt);
+        this.swingRate = 0;
+        this.crane.rotation.z *= Math.max(0, 1 - dt * 1.6);
+      } else {
+        drive(this.crane, input, dt, 6.2, 1.3, 70);
+        this.swingRate = -input.right.x * 1.3;
+        this.slew += this.swingRate * dt;
+        this.boom += -input.right.y * dt * 1.0;
+        if (input.stickOut) this.stick += dt * 1.2;
+        if (input.stickIn) this.stick -= dt * 1.2;
+        this.boom = THREE.MathUtils.clamp(this.boom, -1.15, 0.3);
+        this.stick = THREE.MathUtils.clamp(this.stick, -0.1, 2.1);
+        this.crane.setSlew(this.slew);
+        this.crane.setBoom(this.boom);
+        this.crane.setStick(this.stick);
+        if (input.left.y * input.left.y + input.left.x * input.left.x > 0.05) this.usedCrane = true;
+      }
+    } else if (this.rig === "pump" && this.pump) {
+      drive(this.pump, input, dt, 3.2, 0.8, 70);
+      if (input.left.y * input.left.y + input.left.x * input.left.x > 0.05) this.usedPump = true;
     }
 
     if (this.mode === "levee") this.updateLevee(input, dt);
     else this.updateAirfield(input, dt);
+    this.pump?.spinImpeller(dt);
 
     this.followCam(active, dt);
+  }
+
+  private cycleRig(): void {
+    if (this.mode === "levee") {
+      this.rig = this.rig === "dozer" ? "crane" : this.rig === "crane" ? "pump" : "dozer";
+    } else {
+      this.rig = this.rig === "dozer" ? "crane" : "dozer";
+    }
+    this.swingRate = 0;
+    this.hud.hint = this.rigHint();
+  }
+
+  private rigHint(): string {
+    if (this.mode !== "levee") {
+      return this.rig === "crane"
+        ? "Swing and raise the Boom until the hook is over a matting panel, then tap Hook."
+        : "";
+    }
+    if (this.rig === "crane") {
+      return "Boom is up and down. Swing is side to side. A barrier is 7.4 tons, just under the 8 ton limit. Swing easy or the crane tips.";
+    }
+    if (this.rig === "pump") {
+      return "Creep onto the dry side, behind the levee, then tap Run. The pump pulls the river down.";
+    }
+    return "Left thumb drives. Right thumb is lift and tilt. Push the pale piles straight into the gap.";
+  }
+
+  private activeRig(): THREE.Object3D | null {
+    if (this.rig === "dozer") return this.dozer;
+    if (this.rig === "crane") return this.crane;
+    return this.mode === "levee" ? this.pump : this.dozer;
   }
 
   private followCam(target: THREE.Object3D, dt: number): void {
@@ -687,7 +742,11 @@ export class Game {
 
   private updateLevee(input: Input, dt: number): void {
     if (!this.dozer || !this.water) return;
-    this.waterLevel += dt * 0.018;
+    this.missionTime += dt;
+    this.settleCraneLoad(dt);
+    const pumping = this.pumpHelping();
+    this.waterLevel += dt * (pumping ? 0.004 : 0.018);
+    if (pumping) this.waterLevel = Math.max(0.9, this.waterLevel - dt * 0.008);
     this.water.position.y = this.waterLevel;
     if (this.flood) {
       this.water.position.x = THREE.MathUtils.lerp(this.water.position.x, 10, 1 - Math.exp(-0.6 * dt));
@@ -710,6 +769,7 @@ export class Game {
     }
 
     if (this.crane) this.handleHook(input, this.barriers, 7);
+    this.updatePump(input);
 
     let fill = 0;
     for (const rock of this.rocks) {
@@ -735,24 +795,98 @@ export class Game {
       this.finishLevee(true);
     } else if (!this.end) {
       const waterTone = this.waterLevel > 2.6 ? "bad" : this.waterLevel > 2.0 ? "warn" : undefined;
+      const open = 1 - Math.min(1, this.fill);
+      const stress = Math.max(0, Math.min(1, (this.waterLevel / crest) * (0.35 + 0.65 * open)));
+      const next = this.rig === "dozer" ? "Crane" : this.rig === "crane" ? "Pump" : "Dozer";
+      let objective = "Push riprap into the gap";
+      let action = "Hook";
+      let showAction = false;
+      let rightStick: HudState["rightStick"] = "blade";
+      if (this.rig === "crane") {
+        objective = this.craneLock > 0
+          ? "Crane tipped — wait for the tracks"
+          : this.held
+            ? "Swing slow, then drop the barrier in the gap"
+            : "Hook a barrier and swing it over the gap";
+        action = this.held ? "Drop" : "Hook";
+        showAction = true;
+        rightStick = "crane";
+      } else if (this.rig === "pump") {
+        objective = pumping
+          ? "Pump is drawing the river down"
+          : "Set the pump on the dry side and run it";
+        action = this.pumpRunning ? "Stop" : "Run";
+        showAction = true;
+        rightStick = "none";
+      }
       this.hud = {
         title: "Levee Breach",
-        objective: this.rig === "dozer"
-          ? "Push riprap into the gap"
-          : this.held
-            ? "Drop the barrier in the gap"
-            : "Hook a barrier and drop it in the gap",
+        objective,
         hint: this.hud.hint,
-        action: this.held ? "Drop" : "Hook",
-        swap: this.rig === "dozer" ? "Crane" : "Dozer",
-        showAction: this.rig === "crane",
-        rightStick: this.rig === "crane" ? "crane" : "blade",
+        action,
+        swap: next,
+        showAction,
+        rightStick,
         meters: [
           { label: "River", value: this.waterLevel / crest, tone: waterTone },
           { label: "Plug", value: Math.min(1, this.fill), tone: this.fill >= 1 ? "good" : undefined },
+          { label: "Stress", value: stress, tone: stress > 0.72 ? "bad" : stress > 0.45 ? "warn" : undefined },
         ],
       };
     }
+  }
+
+  private pumpHelping(): boolean {
+    return this.pumpRunning && !!this.pump && this.pump.position.x > 6;
+  }
+
+  private updatePump(input: Input): void {
+    if (this.rig !== "pump" || !this.pump || !input.actionPressed) return;
+    if (this.pump.position.x <= 6) {
+      this.pumpRunning = false;
+      this.pump.setRunning(false);
+      this.hud.hint = "That is still the wet side. Creep the pump behind the levee, then run it.";
+      return;
+    }
+    this.pumpRunning = !this.pumpRunning;
+    this.pump.setRunning(this.pumpRunning);
+    this.usedPump = this.usedPump || this.pumpRunning;
+    this.hud.hint = this.pumpRunning
+      ? "Pump is running. Intake is on the dry side and the head is dropping."
+      : "Pump is stopped.";
+  }
+
+  /** A near-limit barrier sways, and a fast swing tips the crane. */
+  private settleCraneLoad(dt: number): void {
+    if (!this.held || this.rig !== "crane") {
+      this.sway = Math.max(0, this.sway - dt * 0.8);
+      return;
+    }
+    const tons = typeof this.held.userData.tons === "number" ? this.held.userData.tons : 7.4;
+    if (tons > 8) {
+      this.dropHeld(false);
+      this.hud.hint = "Over the crane's 8 ton limit. That one stays on the ground.";
+      return;
+    }
+    const excess = Math.max(0, Math.abs(this.swingRate) - 0.55);
+    const grow = excess * (0.85 + tons / 8);
+    this.sway = Math.max(0, this.sway + grow * dt - this.sway * 0.65 * dt);
+    this.held.position.set(Math.sin(this.missionTime * 3.2) * this.sway * 0.85, -1.1, 0.2);
+    if (this.sway > 1) {
+      this.dropHeld(true);
+      this.craneLock = 2.6;
+      this.sway = 0;
+      if (this.crane) this.crane.rotation.z = 0.2;
+      this.hud.hint = "Swung too fast with a heavy barrier. The crane tipped and dropped it.";
+    }
+  }
+
+  private dropHeld(tipped: boolean): void {
+    if (!this.held) return;
+    this.scene.attach(this.held);
+    this.held.position.y = 0.52;
+    if (tipped) this.held.position.x += 1.6;
+    this.held = null;
   }
 
   private updateAirfield(input: Input, dt: number): void {
@@ -853,13 +987,10 @@ export class Game {
 
   private handleHook(input: Input, items: THREE.Mesh[], reach: number): void {
     if (!this.crane || this.rig !== "crane") return;
+    this.crane.updateMatrixWorld(true);
     this.hookWorldPosition(_world);
     if (this.held) {
-      if (input.actionPressed && this.mode === "levee") {
-        this.scene.attach(this.held);
-        this.held.position.y = 0.52;
-        this.held = null;
-      }
+      if (input.actionPressed && this.mode === "levee") this.dropHeld(false);
       return;
     }
     if (!input.actionPressed) return;
@@ -917,7 +1048,7 @@ export class Game {
       mission: "levee",
       title: won ? "The levee held" : "The town flooded",
       body: won
-        ? `You plugged the gap with rock and ${placed} barrier${placed === 1 ? "" : "s"} before the river came over the top.`
+        ? `You plugged the gap with rock and ${placed} barrier${placed === 1 ? "" : "s"}${this.usedPump ? ", and the pump held the river down" : ""} before the crest passed.`
         : "The river came over the gap before it was plugged. The streets below took the water.",
       stars,
     };
@@ -958,6 +1089,7 @@ export class Game {
       meters: [
         { label: "River", value: 0.33 },
         { label: "Plug", value: 0 },
+        { label: "Stress", value: 0.2 },
       ],
     };
   }
@@ -999,6 +1131,8 @@ export class Game {
     this.scene.add(hemi, sun);
     this.dozer = null;
     this.crane = null;
+    this.pump = null;
+    this.pumpRunning = false;
     this.water = null;
     this.plane = null;
     this.lights = null;

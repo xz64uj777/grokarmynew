@@ -94,9 +94,9 @@ function applyHud(rebuildMeters: boolean): void {
   btnAction.hidden = !state.showAction;
   btnSwitch.textContent = state.swap;
   stickAdjust.hidden = true;
-  const crane = state.rightStick === "crane";
-  craneAxes.hidden = !crane;
-  labelRight.hidden = crane;
+  craneAxes.hidden = state.rightStick !== "crane";
+  labelRight.hidden = state.rightStick !== "blade";
+  labelRight.textContent = "Lift · Tilt";
   if (rebuildMeters) {
     hudMeters.replaceChildren();
     for (const meter of state.meters) {
